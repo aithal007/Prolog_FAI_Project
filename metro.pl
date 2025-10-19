@@ -107,6 +107,12 @@ nearest_station(Lat, Lon, Station) :-
 route_as_json(Path, json([route=Path])).
 
 % ------------------ HTTP server and handlers ------------------
+% Serve index.html explicitly at root to avoid directory listing permission issues.
+:- http_handler(root(.), index_handler, [priority(100)]).
+index_handler(Request) :-
+    http_reply_file('static/index.html', [], Request).
+
+% Serve static assets (app.js, style.css, etc.).
 :- http_handler(root(.), serve_files_in_directory('./static'), [prefix]).
 :- http_handler('/api/get_route', get_route_handler, []).
 
