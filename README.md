@@ -8,7 +8,7 @@ Files of interest:
 - `logic_translator.pl` — Prolog knowledge base with DCG rules and lexicon used to generate logic.
 - `static/index.html`, `static/app.js`, `static/style.css` — Frontend UI for typing sentences and viewing results.
 - `requirements.txt` — Python dependencies.
-- `metro.pl` — (previous project file) Metro route finder — retained in repo.
+- (previous `metro.pl` project removed) This repository now contains the hybrid translator.
 
 Quick start
 
