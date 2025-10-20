@@ -1,50 +1,49 @@
-# Namma Metro Route Finder (Prolog + Static Frontend)
+# Hybrid AI + Prolog: Natural Language → Predicate Logic Translator
 
-This project is a small demo that uses SWI-Prolog as a backend logic engine and serves a static frontend. The backend exposes a JSON API to compute the shortest route (fewest stops) between two GPS coordinates by mapping them to nearest metro stations and running a BFS on the metro graph.
+This repository contains a hybrid system that converts English sentences into predicate logic using spaCy for NLP and Prolog's DCG for logical formula construction. It includes a lightweight Flask server that exposes a web UI and a JSON API.
 
-Files:
+Files of interest:
 
-- `metro.pl` - SWI-Prolog program: knowledge base, BFS route finder, haversine nearest-station, and HTTP server.
-- `static/index.html` - Simple web UI.
-- `static/app.js` - Frontend logic to call the Prolog API.
-- `static/style.css` - Minimal styles.
+- `hybrid_translator.py` — Flask server that accepts POST /api/convert and returns predicate logic.
+- `logic_translator.pl` — Prolog knowledge base with DCG rules and lexicon used to generate logic.
+- `static/index.html`, `static/app.js`, `static/style.css` — Frontend UI for typing sentences and viewing results.
+- `requirements.txt` — Python dependencies.
+- `metro.pl` — (previous project file) Metro route finder — retained in repo.
 
-How to run:
+Quick start
 
-1. Install SWI-Prolog (https://www.swi-prolog.org/) for Windows.
-2. Open a PowerShell and change directory into the project folder:
-
-```powershell
-cd 'c:\Users\Lenovo\Documents\prolog_project'
-``` 
-
-3. Start SWI-Prolog and load `metro.pl`:
+1. Create and activate a Python virtual environment (recommended):
 
 ```powershell
-swipl -s metro.pl
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 ```
 
-4. At the Prolog prompt, run:
+2. Install dependencies and spaCy model:
 
-```prolog
-?- start_server(8080).
+```powershell
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm
 ```
 
-5. Open your browser and navigate to http://localhost:8080/ to use the UI.
+3. Ensure SWI-Prolog is installed and `swipl` is available on PATH (or install it from https://www.swi-prolog.org/).
 
-API:
+4. Run the Flask server:
 
-POST /api/get_route
-JSON body: { "start": {"lat": <num>, "lon": <num>}, "end": {"lat": <num>, "lon": <num>} }
-Response: { "route": [stations], "start_station": "...", "end_station": "...", "message": "ok" }
+```powershell
+python hybrid_translator.py
+```
 
-Example Prolog queries (for debugging):
+5. Open your browser at http://localhost:8000/ to use the web UI.
 
-?- nearest_station(12.9755,77.6067, S).
-?- path_bfs('indiranagar','majestic', P).
+API
 
-Notes / Next steps:
+POST /api/convert
+Body JSON: { "sentence": "every student reads a book" }
+Response JSON: { "success": true, "tokens": [...], "logic": "forall(X, (...))", ... }
 
-- Add error handling for missing static files.
-- Return line-change metadata in the JSON response so the frontend can highlight transfers.
-- Add CORS headers if you serve the frontend from another origin.
+Notes
+
+- The server tries `pyswip` (a Python-Prolog bridge) first. If not available, it falls back to calling `swipl` as a subprocess to consult `logic_translator.pl` and run the DCG.
+- The Prolog KB contains a small lexicon and helpers to add new words dynamically.
+- You can expand the lexicon in `logic_translator.pl` or add runtime words via `hybrid_translator.py` if you modify it.
