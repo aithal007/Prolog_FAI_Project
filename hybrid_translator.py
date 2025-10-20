@@ -152,6 +152,7 @@ def query_prolog_phrase(tokens):
                         if 'last query was not closed' in msg.lower() or 'not closed' in msg.lower():
                             try:
                                 print('Reinitializing Prolog engine due to open query...')
+                                global prolog
                                 prolog = Prolog()
                                 if os.path.exists(kb):
                                     prolog.consult(kb)
@@ -166,6 +167,7 @@ def query_prolog_phrase(tokens):
                         if 'last query was not closed' in msg.lower() or 'not closed' in msg.lower():
                             try:
                                 print('Reinitializing Prolog engine due to open query...')
+                                global prolog
                                 prolog = Prolog()
                                 if os.path.exists(kb):
                                     prolog.consult(kb)
