@@ -56,7 +56,38 @@ def tokens_from_sentence(sentence):
     """
     if nlp:
         doc = nlp(sentence.lower())
-        toks = [t.lemma_.lower() if t.lemma_ else t.text.lower() for t in doc if not t.is_punct and not t.is_space]
+        toks = []
+        dets = set(['every', 'all', 'each', 'any', 'a', 'an', 'some', 'one'])
+        for i, token in enumerate(doc):
+            if token.is_punct or token.is_space:
+                continue
+            # Keep determiners (quantifiers) as-is
+            if token.pos_ == 'DET' and token.text.lower() in dets:
+                toks.append(token.text.lower())
+                continue
+            # Verbs: use lemma
+            if token.pos_ == 'VERB':
+                lemma = token.lemma_.lower() if token.lemma_ else token.text.lower()
+                toks.append(lemma)
+                continue
+            # Nouns / proper nouns: use lemma (prefer head noun, skip compounds/adjectives)
+            if token.pos_ in ('NOUN', 'PROPN'):
+                # prefer the syntactic head if this token is part of a compound, choose the noun itself
+                lemma = token.lemma_.lower() if token.lemma_ else token.text.lower()
+                toks.append(lemma)
+                continue
+            # Adjectives often modify nouns (e.g., 'mobile phone'); skip them so head noun remains
+            if token.pos_ == 'ADJ':
+                # only keep adjectives when not followed by a noun (rare for our domain)
+                if i + 1 < len(doc) and doc[i+1].pos_ in ('NOUN','PROPN'):
+                    continue
+                else:
+                    toks.append(token.lemma_.lower() if token.lemma_ else token.text.lower())
+                    continue
+            # Fallback: include lemmas for other content words
+            if token.pos_ in ('PRON', 'NUM'):
+                toks.append(token.lemma_.lower() if token.lemma_ else token.text.lower())
+                continue
         return toks
     # fallback
     cleaned = ''.join(ch if ch.isalnum() or ch.isspace() else ' ' for ch in sentence.lower())
