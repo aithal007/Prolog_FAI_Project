@@ -129,6 +129,47 @@ def query_prolog_phrase(tokens):
             if res:
                 logic = res[0].get('Logic')
                 return True, str(logic)
+            # No result from pyswip: try to auto-assert missing nouns/verbs into the running Prolog KB
+            try:
+                kb_nouns, kb_verbs = load_kb_terms()
+                missing_nouns = set()
+                missing_verbs = set()
+                for t in tokens:
+                    if isinstance(t, dict):
+                        txt = t['text']
+                        pos = t['pos']
+                        if pos == 'NOUN' and txt not in kb_nouns:
+                            missing_nouns.add(txt)
+                        if pos == 'VERB' and txt not in kb_verbs:
+                            missing_verbs.add(txt)
+                # Assert into Prolog using pyswip
+                for n in sorted(missing_nouns):
+                    try:
+                        # Add DCG noun rule and predicate
+                        prolog.assertz(f"noun({n}, X, {n}(X)) --> [{n}].")
+                        prolog.assertz(f"{n}({{X}}) :- true.")
+                    except Exception:
+                        # fallback to simpler assert
+                        try:
+                            prolog.assertz(f"noun({n}, X, {n}(X)) --> [{n}].")
+                        except Exception:
+                            pass
+                for v in sorted(missing_verbs):
+                    try:
+                        prolog.assertz(f"verb({v}, S, O, {v}(S,O)) --> [{v}].")
+                        prolog.assertz(f"{v}({{S}},{ {O} }) :- true.")
+                    except Exception:
+                        try:
+                            prolog.assertz(f"verb({v}, S, O, {v}(S,O)) --> [{v}].")
+                        except Exception:
+                            pass
+                # Retry query
+                res2 = list(prolog.query(query))
+                if res2:
+                    logic = res2[0].get('Logic')
+                    return True, str(logic)
+            except Exception:
+                pass
             return False, 'No parse'
         except Exception as e:
             return False, f'pyswip query error: {e}'
