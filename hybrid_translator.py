@@ -145,24 +145,33 @@ def query_prolog_phrase(tokens):
                 # Assert into Prolog using pyswip
                 for n in sorted(missing_nouns):
                     try:
-                        # Add DCG noun rule and predicate
                         prolog.assertz(f"noun({n}, X, {n}(X)) --> [{n}].")
-                        prolog.assertz(f"{n}({{X}}) :- true.")
-                    except Exception:
-                        # fallback to simpler assert
-                        try:
-                            prolog.assertz(f"noun({n}, X, {n}(X)) --> [{n}].")
-                        except Exception:
-                            pass
+                    except Exception as e:
+                        msg = str(e)
+                        # If a previous query wasn't closed, re-create Prolog instance and re-consult KB
+                        if 'last query was not closed' in msg.lower() or 'not closed' in msg.lower():
+                            try:
+                                print('Reinitializing Prolog engine due to open query...')
+                                prolog = Prolog()
+                                if os.path.exists(kb):
+                                    prolog.consult(kb)
+                                prolog.assertz(f"noun({n}, X, {n}(X)) --> [{n}].")
+                            except Exception:
+                                pass
                 for v in sorted(missing_verbs):
                     try:
                         prolog.assertz(f"verb({v}, S, O, {v}(S,O)) --> [{v}].")
-                        prolog.assertz(f"{v}({{S}},{ {O} }) :- true.")
-                    except Exception:
-                        try:
-                            prolog.assertz(f"verb({v}, S, O, {v}(S,O)) --> [{v}].")
-                        except Exception:
-                            pass
+                    except Exception as e:
+                        msg = str(e)
+                        if 'last query was not closed' in msg.lower() or 'not closed' in msg.lower():
+                            try:
+                                print('Reinitializing Prolog engine due to open query...')
+                                prolog = Prolog()
+                                if os.path.exists(kb):
+                                    prolog.consult(kb)
+                                prolog.assertz(f"verb({v}, S, O, {v}(S,O)) --> [{v}].")
+                            except Exception:
+                                pass
                 # Retry query
                 res2 = list(prolog.query(query))
                 if res2:
