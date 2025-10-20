@@ -51,52 +51,73 @@ import subprocess
 
 
 def tokens_from_sentence(sentence):
-    """Return a list of lower-case tokens suitable for Prolog DCG.
+    """Return a list of dicts [{'text':..., 'pos':...}] representing tokens.
     If spaCy is available, use it to lemmatize verbs/nouns; otherwise simple split.
     """
+    result = []
     if nlp:
         doc = nlp(sentence.lower())
-        toks = []
         dets = set(['every', 'all', 'each', 'any', 'a', 'an', 'some', 'one'])
         for i, token in enumerate(doc):
             if token.is_punct or token.is_space:
                 continue
-            # Keep determiners (quantifiers) as-is
-            if token.pos_ == 'DET' and token.text.lower() in dets:
-                toks.append(token.text.lower())
+            pos = token.pos_
+            text = token.text.lower()
+            if pos == 'DET' and text in dets:
+                result.append({'text': text, 'pos': 'DET'})
                 continue
-            # Verbs: use lemma
-            if token.pos_ == 'VERB':
-                lemma = token.lemma_.lower() if token.lemma_ else token.text.lower()
-                toks.append(lemma)
+            if pos == 'VERB':
+                lemma = token.lemma_.lower() if token.lemma_ else text
+                result.append({'text': lemma, 'pos': 'VERB'})
                 continue
-            # Nouns / proper nouns: use lemma (prefer head noun, skip compounds/adjectives)
-            if token.pos_ in ('NOUN', 'PROPN'):
-                # prefer the syntactic head if this token is part of a compound, choose the noun itself
-                lemma = token.lemma_.lower() if token.lemma_ else token.text.lower()
-                toks.append(lemma)
+            if pos in ('NOUN', 'PROPN'):
+                lemma = token.lemma_.lower() if token.lemma_ else text
+                result.append({'text': lemma, 'pos': 'NOUN'})
                 continue
-            # Adjectives often modify nouns (e.g., 'mobile phone'); skip them so head noun remains
-            if token.pos_ == 'ADJ':
-                # only keep adjectives when not followed by a noun (rare for our domain)
-                if i + 1 < len(doc) and doc[i+1].pos_ in ('NOUN','PROPN'):
+            if pos == 'ADJ':
+                # skip adjectives that directly precede a noun (we keep the noun)
+                if i + 1 < len(doc) and doc[i+1].pos_ in ('NOUN', 'PROPN'):
                     continue
-                else:
-                    toks.append(token.lemma_.lower() if token.lemma_ else token.text.lower())
-                    continue
-            # Fallback: include lemmas for other content words
-            if token.pos_ in ('PRON', 'NUM'):
-                toks.append(token.lemma_.lower() if token.lemma_ else token.text.lower())
+                result.append({'text': token.lemma_.lower() if token.lemma_ else text, 'pos': 'ADJ'})
                 continue
-        return toks
+            # fallback
+            result.append({'text': token.lemma_.lower() if token.lemma_ else text, 'pos': pos})
+        return result
+    # fallback simple tokenizer
+    cleaned = ''.join(ch if ch.isalnum() or ch.isspace() else ' ' for ch in sentence.lower())
+    for w in cleaned.split():
+        result.append({'text': w, 'pos': 'UNK'})
+    return result
     # fallback
     cleaned = ''.join(ch if ch.isalnum() or ch.isspace() else ' ' for ch in sentence.lower())
     return [w for w in cleaned.split() if w]
 
 
-def prolog_list_from_tokens(tokens):
-    # Build Prolog atom list: [every, student, read, a, book]
-    return '[' + ','.join(tokens) + ']'
+def prolog_list_from_tokens(tokens_with_pos):
+    # Accept list of dicts or simple strings. Return Prolog list string [every,student,read,a,book]
+    if not tokens_with_pos:
+        return '[]'
+    if isinstance(tokens_with_pos[0], dict):
+        toks = [t['text'] for t in tokens_with_pos]
+    else:
+        toks = tokens_with_pos
+    return '[' + ','.join(toks) + ']'
+
+
+def load_kb_terms():
+    """Parse logic_translator.pl to extract known noun and verb tokens."""
+    kb_path = os.path.join(APP_DIR, 'logic_translator.pl')
+    nouns = set()
+    verbs = set()
+    if not os.path.exists(kb_path):
+        return nouns, verbs
+    import re
+    text = open(kb_path, 'r', encoding='utf-8').read()
+    for m in re.finditer(r"noun\(\s*([a-zA-Z0-9_]+)\s*,", text):
+        nouns.add(m.group(1))
+    for m in re.finditer(r"verb\(\s*([a-zA-Z0-9_]+)\s*,", text):
+        verbs.add(m.group(1))
+    return nouns, verbs
 
 
 def query_prolog_phrase(tokens):
@@ -123,6 +144,44 @@ def query_prolog_phrase(tokens):
         out = proc.stdout.strip()
         if out and out != 'NO_PARSE':
             return True, out
+        # If parse failed, try to auto-add missing nouns/verbs and retry with temp KB
+        # Determine missing terms by comparing tokens to KB
+        try:
+            kb_nouns, kb_verbs = load_kb_terms()
+            tokens_list = [t['text'] if isinstance(t, dict) else t for t in tokens]
+            # decide pos from tokens if dict present
+            missing_nouns = set()
+            missing_verbs = set()
+            for t in tokens:
+                if isinstance(t, dict):
+                    txt = t['text']
+                    pos = t['pos']
+                    if pos == 'NOUN' and txt not in kb_nouns:
+                        missing_nouns.add(txt)
+                    if pos == 'VERB' and txt not in kb_verbs:
+                        missing_verbs.add(txt)
+            if missing_nouns or missing_verbs:
+                # create temporary KB file that consults the original and adds DCG entries
+                import tempfile
+                tmp_fd, tmp_path = tempfile.mkstemp(suffix='.pl', prefix='tmp_kb_', dir=APP_DIR)
+                with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
+                    f.write(f":- consult('{os.path.join(APP_DIR,'logic_translator.pl').replace('\\','/')}').\n")
+                    for n in sorted(missing_nouns):
+                        f.write(f"noun({n}, X, {n}(X)) --> [{n}].\n")
+                    for v in sorted(missing_verbs):
+                        f.write(f"verb({v}, S, O, {v}(S,O)) --> [{v}].\n")
+                swipl_cmd2 = ['swipl', '-q', '-s', tmp_path,
+                             '-g', f"(phrase(sentence(Logic), {prolog_list}) -> write(Logic) ; write('NO_PARSE')), halt"]
+                proc2 = subprocess.run(swipl_cmd2, capture_output=True, text=True, check=False)
+                out2 = proc2.stdout.strip()
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                if out2 and out2 != 'NO_PARSE':
+                    return True, out2
+        except Exception:
+            pass
         return False, 'No parse (swipl)'
     except Exception as e:
         return False, f'swipl call failed: {e}'
